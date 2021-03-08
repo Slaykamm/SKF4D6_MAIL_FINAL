@@ -15,6 +15,51 @@ from django.core.mail import send_mail
 from django.core.mail import EmailMultiAlternatives # импортируем класс для создание объекта письма с html
 from django.template.loader import render_to_string
 
+from django.db.models.signals import post_save
+from django.core.mail import mail_managers
+from django.db.models.signals import m2m_changed
+
+
+def notify_subscribers_newscreation(sender, instance,  **kwargs): #created,
+
+
+    id = instance.id   # получаем ID побуликованной новости
+    postCat = Post.objects.get(pk=id).post_category.all()  # получаем к каой категории она отностися
+
+    for cat in postCat:   # пошли по категориям, к которым относится опубликованная новость
+
+        #получаем емаил подписчиков. 
+        emails_list = []  
+        subscribers = User.objects.filter(category = cat)  #получили список подписчков.
+        for subscriber_name in subscribers:  #итерируемся по списку - получаем имена
+            subscriber_email = User.objects.get(username=str(subscriber_name)).email #из имен получаем емаил
+            emails_list.append(subscriber_email)  #добавляем в список емаилов
+
+        print('email', emails_list)
+
+        html_content = render_to_string( 
+        'subscribe_created.html',
+        {
+        'title': instance.post_title, 'text':instance.article_text,
+        }
+
+        )
+
+        msg = EmailMultiAlternatives(
+        subject=f'Обновление в категории ',    #кому
+                
+        body=f'Категоиря обновилась', 
+        from_email='destpoch@yandex.ru',
+        to=emails_list  
+        )
+
+        msg.attach_alternative(html_content, "text/html")
+        msg.send() # отсылаем
+
+m2m_changed.connect(notify_subscribers_newscreation, sender=Post.post_category.through)
+#post_save.connect(notify_subscribers_newscreation, sender = Post )
+
+
  
 class PostList(ListView):
     model = Post  # указываем модель, объекты которой мы будем выводить
