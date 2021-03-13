@@ -1,6 +1,6 @@
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView # импортируем класс, который говорит нам о том, что в этом представлении мы будем выводить список объектов из БД
 from .models import Post, Author, Category, PostCategory, Comment, User, CategorySubscribers
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import PermissionRequiredMixin
 
@@ -14,52 +14,7 @@ from django.shortcuts import render, reverse, redirect
 from django.core.mail import send_mail
 from django.core.mail import EmailMultiAlternatives # импортируем класс для создание объекта письма с html
 from django.template.loader import render_to_string
-
-from django.db.models.signals import post_save
-from django.core.mail import mail_managers
-from django.db.models.signals import m2m_changed
-
-
-def notify_subscribers_newscreation(sender, instance,  **kwargs): #created,
-
-
-    id = instance.id   # получаем ID побуликованной новости
-    postCat = Post.objects.get(pk=id).post_category.all()  # получаем к каой категории она отностися
-
-    for cat in postCat:   # пошли по категориям, к которым относится опубликованная новость
-
-        #получаем емаил подписчиков. 
-        emails_list = []  
-        subscribers = User.objects.filter(category = cat)  #получили список подписчков.
-        for subscriber_name in subscribers:  #итерируемся по списку - получаем имена
-            subscriber_email = User.objects.get(username=str(subscriber_name)).email #из имен получаем емаил
-            emails_list.append(subscriber_email)  #добавляем в список емаилов
-
-        print('email', emails_list)
-
-        html_content = render_to_string( 
-        'subscribe_created.html',
-        {
-        'title': instance.post_title, 'text':instance.article_text,
-        }
-
-        )
-
-        msg = EmailMultiAlternatives(
-        subject=f'Обновление в категории ',    #кому
-                
-        body=f'Категоиря обновилась', 
-        from_email='destpoch@yandex.ru',
-        to=emails_list  
-        )
-
-        msg.attach_alternative(html_content, "text/html")
-        msg.send() # отсылаем
-
-m2m_changed.connect(notify_subscribers_newscreation, sender=Post.post_category.through)
-#post_save.connect(notify_subscribers_newscreation, sender = Post )
-
-
+ 
  
 class PostList(ListView):
     model = Post  # указываем модель, объекты которой мы будем выводить
@@ -71,9 +26,12 @@ class PostList(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         id = self.kwargs.get('pk')
-        print(id)
-        context['time_now'] = datetime.now()
-        context['logged_user'] = self.request.user.username
+        #print(id)
+        context['time_now'] = datetime.now()   
+
+
+        context['logged_user'] = self.request.user.username  # это, чтобы в шаблоне показывать вместо логина имя залогиненного
+
         return context
 
 class PostDetailView(LoginRequiredMixin, DetailView):
@@ -87,19 +45,19 @@ class PostDetailView(LoginRequiredMixin, DetailView):
 
         id = self.kwargs.get('pk')
         user = self.request.user.username
-        context['logged_user'] = self.request.user.username
+        context['logged_user'] = self.request.user.username   # это, чтобы в шаблоне показывать вместо логина имя залогиненного
 
-        postCat = Post.objects.get(pk=id).post_category.all()
-        usCat = Category.objects.filter(subscribers= User.objects.get(username=str(user)))
+        postCat = Post.objects.get(pk=id).post_category.all()   # получаем к каой категории относится пост
+        usCat = Category.objects.filter(subscribers= User.objects.get(username=str(user))) # к какой категории относится юзер 
 
-        context['is_not_subscriber'] = False  
+        context['is_not_subscriber'] = False  # делаем переменную фолс по умолчанию если юзер никуда не подписан. в зависимости от этого кнопка подписка или отписка
 
         if usCat.exists():   #проверяем, что пользователь хоть куда то подписан, иначе сразу предлагаем подписаться.
-            for check in usCat:
+            for check in usCat:  # в каждом юзере проверяем каждую категорию
                 for check2 in postCat:
                            
                     if check == check2:
-                        context['is_not_subscriber'] = True
+                        context['is_not_subscriber'] = True #  если есть соответсвие значени пеменную делаем тру и передаем в шаблон
 
                         
         else:
@@ -119,7 +77,7 @@ class SubscribeView(DetailView):
         context = super().get_context_data(**kwargs)
         id = self.kwargs.get('pk')
         posts = Post.objects.get(pk=id)
-        user = self.request.user.username
+        user = self.request.user.username  #  тут получаем данные для передачи в емаил, который отправим юзерам
         userEmail = self.request.user.email
         context['logged_user'] = self.request.user.username
 
@@ -135,7 +93,7 @@ class SubscribeView(DetailView):
 
 
         for cat in postCat:
-            if not CategorySubscribers.objects.filter(category = cat, user = self.request.user).exists():
+            if not CategorySubscribers.objects.filter(category = cat, user = self.request.user).exists():   # делаем если подпиччика нет
                 CategorySubscribers.objects.create(category = cat, user = self.request.user )
                 forEmailCat = cat #получаем категорию, чтобы отправить юзеру по емаил
                 context['is_not_subscriber'] = False
@@ -143,16 +101,16 @@ class SubscribeView(DetailView):
                 html_content = render_to_string( 
                 'subscribe_created.html',
                 {
-                'user': user, 'cat': cat, 'title': emailtitle, 'text':emailarticle,
+                'user': user, 'cat': cat, 'title': emailtitle, 'text':emailarticle, 'art_id':id,
                 }
 
                 )
-
+                print ('asdas', id)
                 msg = EmailMultiAlternatives(
                 subject=f'{self.request.user} ',    #кому
                 
                 body=f'Вы подписались на категорию {forEmailCat}', 
-                from_email='destpoch@yandex.ru',
+                from_email='destpoch22@mail.ru',
                 to=[f'{userEmail}', ]  
                 )
 
@@ -182,7 +140,7 @@ class UnsubscribeView(DetailView):
 
         
         for cat in categ:
-            CategorySubscribers.objects.filter(category = cat, user = self.request.user).delete()
+            CategorySubscribers.objects.filter(category = cat, user = self.request.user).delete()  # проверяем что подпичсчик есть
             context['is_not_subscriber'] = True
             forEmailCat = cat #получаем категорию, чтобы отправить юзеру по емаил
 
@@ -191,7 +149,7 @@ class UnsubscribeView(DetailView):
             subject=f'{self.request.user} ',    #кому
                 
             message=f'Вы отписались от категории {forEmailCat}', 
-            from_email='destpoch@yandex.ru',
+            from_email='destpoch22@mail.ru',
             recipient_list=[f'{userEmail}', ]  
             )
             
